@@ -44,7 +44,7 @@ structured summary, objections, next steps, and one of six sales dispositions.
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ BROWSER (React SPA)                                                                  │
 │                                                                                      │
-│   SpeechRecognition ──▶ text           SpeechSynthesis ◀── reply                     │
+│   SpeechRecognition ──▶ text           SpeechSynthesis ◀── reply                    │
 │   MediaRecorder        Live transcript / controls       (call audio, WebM)           │
 └──────────────────────────────────────────┬───────────────────────────────────────────┘
                                           │  WebSocket (full-duplex, /ws/call)  ·  POST /recording
@@ -52,10 +52,10 @@ structured summary, objections, next steps, and one of six sales dispositions.
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
 │ FASTAPI BACKEND (async)                                                              │
 │                                                                                      │
-│   ┌─────────────────┐ ──▶ ┌──────────────┐ ──▶ ┌──────────────────────────────────┐  │
-│   │   Sales Agent   │ ──▶ │   Groq LLM   │ ──▶ │       JSON-mode response:        │  │
-│   │     stateful    │ ──▶ │ gpt-oss-120b │ ──▶ │       reply · sentiment ·        │  │
-│   │   14-turn cap   │ ──▶ │              │ ──▶ │      topic · buying_intent       │  │
+│   ┌─────────────────┐ ──▶ ┌──────────────┐ ──▶ ┌──────────────────────────────────┐ │
+│   │   Sales Agent   │ ──▶ │   Groq LLM   │ ──▶ │       JSON-mode response:        │ │
+│   │     stateful    │ ──▶ │ gpt-oss-120b │ ──▶ │       reply · sentiment ·        │ │
+│   │   14-turn cap   │ ──▶ │              │ ──▶ │      topic · buying_intent       │ │
 │            │  retries & backoff                                                      │
 │            ▼                                                                         │
 │                                                                                      │
