@@ -5,3 +5,5 @@ backend/.env
 backend/recordings/
 backend/app/recordings/
 node_modules/
+frontend/.env
+dist/
