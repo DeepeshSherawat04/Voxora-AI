@@ -1,7 +1,7 @@
 import { AudioLines } from "lucide-react";
 
 export default function Header() {
-  const tabs = ["Live Call", "Call History", "Insights", "Product Setup"];
+  const tabs = ["Live Call"];
   return (
     <header className="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-purple-100">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-16 flex items-center justify-between gap-4">
