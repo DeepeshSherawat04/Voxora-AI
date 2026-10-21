@@ -12,8 +12,7 @@ Built in 48 hours for the **Sankar Group Intern Assignment**
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql)](https://www.postgresql.org)
 [![WebSocket](https://img.shields.io/badge/Realtime-WebSocket-010101?logo=socket.io)](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket)
 
-**🔗 Live Demo:** https://your-app.vercel.app *(coming soon)*
-**📹 Video Walkthrough:** [Link](#) *(coming soon)*
+**🔗 Live Demo:** https://voxora-ai-alpha.vercel.app/ 
 
 
 ---
