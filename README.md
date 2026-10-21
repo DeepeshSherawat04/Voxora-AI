@@ -134,7 +134,4 @@ Server-side STT (Whisper) + streaming TTS for non-Chrome browsers and mobile
 Multilingual ASR with language auto-detection (Telugu support)
 Post-call analytics dashboard (conversion funnel, objection frequency)
 Call interrupt/barge-in handling with VAD
-<div align="center">
-Built with ☕ and 48 hours of 🚫😴 by <a href="https://github.com/DeepeshSherawat04">Deepesh Sherawat</a>
-</div>
-```
+
