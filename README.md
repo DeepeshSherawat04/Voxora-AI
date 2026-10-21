@@ -1,4 +1,4 @@
-&lt;&gt;
+
 
 # 🎙️ Voxora AI — Autonomous Voice Sales Agent
 
@@ -15,7 +15,6 @@ Built in 48 hours for the **Sankar Group Intern Assignment**
 **🔗 Live Demo:** https://your-app.vercel.app *(coming soon)*
 **📹 Video Walkthrough:** [Link](#) *(coming soon)*
 
-&lt;&gt;
 
 ---
 
