@@ -25,9 +25,7 @@ export default function Header() {
         </nav>
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex items-center gap-2 text-xs">
-            <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-semibold">English</span>
-            <span className="text-slate-400">हिंदी</span>
-            <span className="text-slate-400">తెలుగు</span>
+            <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-semibold">Hinglish</span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 text-white text-xs font-bold flex items-center justify-center">DS</span>
