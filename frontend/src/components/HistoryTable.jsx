@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { Eye, X } from "lucide-react";
 
-const API = "http://localhost:8000/api";
-const RECORDINGS = "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API = `${API_BASE}/api`;
+const RECORDINGS = API_BASE;
 
 const fmt = (sec) =>
   `${String(Math.floor((sec || 0) / 60)).padStart(2, "0")}:${String((sec || 0) % 60).padStart(2, "0")}`;

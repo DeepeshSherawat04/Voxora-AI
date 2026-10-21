@@ -1,8 +1,9 @@
 // frontend/src/hooks/useCall.js
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const WS_URL = "ws://localhost:8000/ws/call";
-const API = "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const WS_URL = API_BASE.replace(/^http/, "ws") + "/ws/call";
+const API = `${API_BASE}/api`;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export function useCall(onCallEnded) {
