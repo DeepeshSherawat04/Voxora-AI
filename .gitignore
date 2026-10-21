@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+backend/.env
+backend/recordings/
+backend/app/recordings/
+node_modules/
