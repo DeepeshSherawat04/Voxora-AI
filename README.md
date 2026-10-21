@@ -40,32 +40,33 @@ structured summary, objections, next steps, and one of six sales dispositions.
 
 ## ⚡ Architecture
 
-┌─────────────────────────────────────────────────────────────────┐
-│                        BROWSER (React SPA)                       │
-│                                                                  │
-│  🎤 SpeechRecognition ──► text ──┐                               │
-│  🔊 SpeechSynthesis ◄── reply ───┤        ⏺ MediaRecorder        │
-│  💬 Live transcript / controls   │        (call audio, WebM)      │
-└──────────────┬───────────────────┴───────────────┬───────────────┘
-│  WebSocket (full-duplex, /ws/call) │  POST /recording
-▼                                    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                    FASTAPI BACKEND (async)                        │
-│                                                                  │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────┐  │
-│  │ Sales Agent  │──►│ Groq LLM     │──►│ JSON-mode response:   │  │
-│  │ (stateful,   │   │ gpt-oss-120b │   │ reply · sentiment ·   │  │
-│  │  14-turn cap)│   │ + retries &  │   │ topic · buying_intent │  │
-│  └──────────────┘   │  backoff     │   └──────────────────────┘  │
-│                     └──────────────┘                             │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │ End-of-call: summarize_call() → CallSummary (validated)  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└──────────────┬───────────────────────────────────────────────────┘
-▼
-┌──────────────────────────────────┐
-│  PostgreSQL — calls + messages   │
-└──────────────────────────────────┘
+```text
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ BROWSER (React SPA)                                                                  │
+│                                                                                      │
+│   SpeechRecognition ──▶ text           SpeechSynthesis ◀── reply                     │
+│   MediaRecorder        Live transcript / controls       (call audio, WebM)           │
+└──────────────────────────────────────────┬───────────────────────────────────────────┘
+                                          │  WebSocket (full-duplex, /ws/call)  ·  POST /recording
+                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ FASTAPI BACKEND (async)                                                              │
+│                                                                                      │
+│   ┌─────────────────┐ ──▶ ┌──────────────┐ ──▶ ┌──────────────────────────────────┐  │
+│   │   Sales Agent   │ ──▶ │   Groq LLM   │ ──▶ │       JSON-mode response:        │  │
+│   │     stateful    │ ──▶ │ gpt-oss-120b │ ──▶ │       reply · sentiment ·        │  │
+│   │   14-turn cap   │ ──▶ │              │ ──▶ │      topic · buying_intent       │  │
+│            │  retries & backoff                                                      │
+│            ▼                                                                         │
+│                                                                                      │
+│   End-of-call: summarize_call() ──▶ CallSummary (validated)                          │
+└──────────────────────────────────────────┬───────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│ PostgreSQL ── calls + messages                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 
 ## 🎯 Engineering highlights
