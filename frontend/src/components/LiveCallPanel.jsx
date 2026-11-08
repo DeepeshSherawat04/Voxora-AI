@@ -9,6 +9,7 @@ export default function LiveCallPanel({ phase, elapsed, live, customerName, cons
                                         muted, error, hasVoice,
                                         onStart, onEnd, onToggleMute }) {
   const [name, setName] = useState("Rahul Verma");
+  const [email, setEmail] = useState("");           // NEW: customer email for follow-up
   const [agree, setAgree] = useState(true);
   const [speakerOn, setSpeakerOn] = useState(true);
 
@@ -26,13 +27,15 @@ export default function LiveCallPanel({ phase, elapsed, live, customerName, cons
         </div>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name"
           className="w-full max-w-xs rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Customer email (for follow-up)" type="email"
+          className="w-full max-w-xs rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
         <label className="flex items-start gap-2 text-xs text-slate-500 text-left max-w-xs">
           <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)}
             className="mt-0.5 accent-purple-600" />
           <span>The customer consents to this call being recorded for quality and training purposes.</span>
         </label>
         <button disabled={!agree || phase === "connecting"}
-          onClick={() => onStart({ name: name.trim() || "Customer", consent: agree })}
+          onClick={() => onStart({ name: name.trim() || "Customer", consent: agree, customer_email: email.trim() })}
           className="rounded-full px-8 py-3 font-semibold text-white bg-gradient-to-r from-purple-600 to-blue-600 shadow-lg shadow-purple-200 hover:opacity-95 disabled:opacity-50">
           {phase === "connecting" ? "Connecting…" : "Start Call"}
         </button>

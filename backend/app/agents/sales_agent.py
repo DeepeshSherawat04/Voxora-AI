@@ -1,8 +1,18 @@
 # backend/app/agents/sales_agent.py
+"""
+sales_agent.py  -  Aria, the live voice sales agent (now powered by LangChain).
+
+WHAT CHANGED FROM THE OLD VERSION?
+    OLD: we called chat_json() from groq_llm.py, then fixed and parsed JSON by hand.
+    NEW: we call run_reply() / run_summary() from chains.py. LangChain makes the
+         model answer in a fixed shape (AriaTurn / CallAnalysis), retries on
+         errors, and checks the answer for us. So groq_llm.py is not needed.
+"""
 from typing import List
 
-from app.models.schemas import CallSummary, SalesStatus
-from app.services.groq_llm import chat_json
+from app.langchain_core.chains import run_reply, run_summary
+from app.models.schemas import CallSummary
+import logging
 
 MAX_TURNS = 14  # safety valve: agent steers to a close after this
 
@@ -17,6 +27,11 @@ integration, automatic follow-up reminders, fast 5-minute setup.
 Offer: Free live demo this week, no commitment.
 """
 
+# NOTE: we REMOVED two things from the old prompt:
+#   1. The "reply must be valid JSON with these keys" block. LangChain now forces
+#      that shape for us using the AriaTurn class in chains.py.
+#   2. The "Converted / Demo Requested ..." status rules. Those belong to the
+#      call summary, and they already live in summary_prompt in chains.py.
 SYSTEM_PROMPT = f"""You are Aria, a friendly and persuasive AI voice sales agent
 for Sankar Group. You are on a live phone call selling CloudDesk CRM.
 
@@ -38,20 +53,6 @@ Rules:
    - "Not interested": thank them politely and close gracefully.
 5. If they ask for price or a demo, treat it as strong buying intent.
 6. Never invent features or prices beyond the brief above.
-
-"Converted" only if they clearly agreed to buy/sign up. "Demo Requested"
-if they agreed to a demo. "Follow-up Required" if they asked to think about it
-or talk to their team. "No Response" ONLY if the customer said nothing at all
-or hung up before engaging — if they answered even one question, never use it.
-Base everything ONLY on the transcript.
-
-Every reply MUST be valid JSON with exactly these keys:
-{{
-  "reply": "what you say aloud, short and natural",
-  "sentiment": "Positive" | "Neutral" | "Negative",
-  "topic": "Pricing" | "Features" | "Demo" | "Objection" | "General",
-  "buying_intent": integer 0-100
-}}
 """
 
 
@@ -66,33 +67,39 @@ class SalesAgent:
 
     # ---------- live conversation ----------
 
-    def _system(self) -> dict:
+    def _system_text(self) -> str:
+        """Build the system prompt text (the rules Aria must follow this turn)."""
         extra = f"\nCustomer name: {self.customer_name}."
         if self.turn_count >= MAX_TURNS:
             extra += (
                 "\nWRAP UP NOW: the call has run long. Move toward a clear close — "
                 "book the demo, send details, or end politely. Do not start new topics."
             )
-        return {"role": "system", "content": SYSTEM_PROMPT + extra}
+        return SYSTEM_PROMPT + extra
 
     def generate_reply(self, customer_text: str) -> dict:
         """One conversation turn. Returns a packet ready to broadcast over WS."""
         self.turn_count += 1
-        self.history.append({"role": "user", "content": customer_text})
 
-        payload = chat_json([self._system()] + self.history)
-        reply = payload.get("reply", "").strip() or "Sorry, could you say that again?"
-
-        # smooth live signals so the % doesn't jump around
+        # IMPORTANT: we pass the history BEFORE adding the new customer message,
+        # because run_reply() adds customer_text to the prompt by itself.
+        # (If we added it first, the model would see the same sentence twice.)
         try:
-            self.buying_intent = round(
-                0.6 * int(payload["buying_intent"]) + 0.4 * self.buying_intent
-            )
-        except (KeyError, ValueError):
-            pass
-        self.sentiment = payload.get("sentiment", self.sentiment)
-        self.topic = payload.get("topic", self.topic)
+            turn = run_reply(self._system_text(), self.history, customer_text)
+            reply = turn.reply.strip() or "Sorry, could you say that again?"
 
+            # smooth live signals so the % doesn't jump around
+            self.buying_intent = round(0.6 * turn.buying_intent + 0.4 * self.buying_intent)
+            self.sentiment = turn.sentiment
+            self.topic = turn.topic
+        except Exception:
+            logging.exception("Groq reply failed")
+            # If Groq fails even after all retries, the live call must NOT crash.
+            # We say a safe sentence and keep the old signals.
+            reply = "Sorry, could you say that again?"
+
+        # Now we save both sides of this turn into the history.
+        self.history.append({"role": "user", "content": customer_text})
         self.history.append({"role": "assistant", "content": reply})
         return {
             "sender": "ai",
@@ -119,36 +126,26 @@ class SalesAgent:
             f"{'Aria' if m['role'] == 'assistant' else self.customer_name}: {m['content']}"
             for m in self.history
         )
-        prompt = f"""Analyze this sales call transcript and return valid JSON
-with exactly these keys:
-{{
-  "summary": "2-3 sentence summary of the conversation",
-  "requirements": "what the customer needs, comma separated",
-  "objections": "their objections or concerns, comma separated (or 'None')",
-  "next_steps": "agreed follow-up actions",
-  "sales_status": one of: Converted | Interested | Follow-up Required |
-                    Not Interested | Demo Requested | No Response,
-  "buying_intent": integer 0-100 (final score),
-  "sentiment": "Positive" | "Neutral" | "Negative"
-}}
-Rules: "Converted" only if they clearly agreed to buy/sign up. "Demo Requested"
-if they agreed to a demo. "Follow-up Required" if they asked to think about it
-or talk to their team. Base everything ONLY on the transcript.
 
-TRANSCRIPT:
-{transcript}"""
-
-        payload = chat_json(
-            [{"role": "user", "content": prompt}],
-            temperature=0.3,
-        )
-
-        # validate the enum — fall back to Follow-up Required if model drifts
         try:
-            payload["sales_status"] = SalesStatus(payload["sales_status"]).value
-        except ValueError:
-            payload["sales_status"] = "Follow-up Required"
-            
+            # The old "validate the enum" code is gone: CallAnalysis only allows
+            # the six valid sales statuses, so the model cannot return a wrong one.
+            payload = run_summary(transcript).model_dump()
+        except Exception:
+            logging.exception("Groq reply failed")
+            # Safe fallback so the call record is still saved.
+            payload = {
+                "summary": "Summary could not be generated.",
+                "requirements": "Unknown",
+                "objections": "Unknown",
+                "next_steps": "Review the transcript manually.",
+                "sales_status": "Follow-up Required",
+                "buying_intent": self.buying_intent,
+                "sentiment": self.sentiment,
+            }
+
+        # Guardrail kept from the old code: "No Response" is only valid if the
+        # customer never spoke. If they said even one thing, it is wrong.
         if any(m["role"] == "user" for m in self.history) and payload["sales_status"] == "No Response":
             payload["sales_status"] = "Interested"
 

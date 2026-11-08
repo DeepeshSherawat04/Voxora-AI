@@ -1,5 +1,3 @@
-
-
 # 🎙️ Voxora AI — Autonomous Voice Sales Agent
 
 **An AI voice bot that sells SaaS over a real-time phone-style conversation — with live transcription, call recording, AI summaries, and automatic sales-status classification.**

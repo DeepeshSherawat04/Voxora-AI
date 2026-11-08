@@ -5,6 +5,7 @@ import LiveCallPanel from "./components/LiveCallPanel";
 import TranscriptPanel from "./components/TranscriptPanel";
 import SummaryPanel from "./components/SummaryPanel";
 import HistoryTable from "./components/HistoryTable";
+import FollowUpPanel from "./components/FollowUpPanel";
 import { useCall } from "./hooks/useCall";
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
         </section>
         <section className="lg:col-span-12">
           <HistoryTable refreshKey={refreshKey} />
+          <FollowUpPanel refreshKey={refreshKey} />
         </section>
       </main>
     </div>

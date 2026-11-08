@@ -9,7 +9,7 @@ from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 from app.config import settings
 
-# The 6 statuses required by the assignment
+# The 6 statuses
 SALES_STATUSES = [
     "Converted", "Interested", "Follow-up Required",
     "Not Interested", "Demo Requested", "No Response",
@@ -25,6 +25,7 @@ class Call(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     customer_name = Column(String(120), default="Customer")
+    customer_email = Column(String(255), nullable=True)      # NEW: follow-up email recipient
     phone = Column(String(30), nullable=True)
     language = Column(String(40), default="English")
 

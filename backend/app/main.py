@@ -5,9 +5,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from app.config import settings
 from app.models.database import init_db
-from app.routes import calls, history
+from app.routes import calls, history, agents
 
 app = FastAPI(title="Voxora AI — AI Voice Sales Agent", version="1.0.0")
 
@@ -40,8 +43,9 @@ def startup():
 
 app.include_router(calls.router)
 app.include_router(history.router)
+app.include_router(agents.router)
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health():
     return {"status": "ok", "product": settings.PRODUCT_NAME}

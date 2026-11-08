@@ -1,6 +1,7 @@
 # backend/app/routes/calls.py
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -13,6 +14,12 @@ from app.models.database import Call, Message, SessionLocal
 
 router = APIRouter()
 
+def _now_iso() -> str:
+    """Current UTC time with a 'Z', so the browser converts it to local time."""
+    return datetime.utcnow().isoformat() + "Z"
+
+logger = logging.getLogger(__name__)
+
 
 async def _finalize(call: Call, agent: SalesAgent, db, websocket: WebSocket | None):
     """Generate AI summary, persist call, optionally notify the client."""
@@ -24,7 +31,8 @@ async def _finalize(call: Call, agent: SalesAgent, db, websocket: WebSocket | No
     call.duration_seconds = int((ended - call.started_at).total_seconds())
 
     # customer never spoke -> No Response, regardless of what the model says
-    if not any(m["role"] == "user" for m in agent.history):
+    customer_spoke = any(m["role"] == "user" for m in agent.history)
+    if not customer_spoke:
         summary.sales_status = "No Response"
 
     call.summary = summary.summary
@@ -43,6 +51,22 @@ async def _finalize(call: Call, agent: SalesAgent, db, websocket: WebSocket | No
             "sales_status": call.sales_status,
             "summary": summary.model_dump(),
         })
+
+    # Start the follow-up email flow AFTER the browser has its summary.
+    # It pauses for human approval, and a failure here must never break the call.
+    if customer_spoke:
+        transcript_text = "\n".join(
+            f"{'Aria' if m['role'] == 'assistant' else call.customer_name}: {m['content']}"
+            for m in agent.history
+        )
+        try:
+            from app.agents.followup_agent import start_followup
+            result = await asyncio.to_thread(
+                start_followup, str(call.id), call.customer_name, transcript_text
+                )
+            print(f"[follow-up] call {call.id} -> {result['status']}")
+        except Exception:
+            logger.exception("Follow-up start failed")
 
 
 @router.websocket("/ws/call")
