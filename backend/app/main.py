@@ -29,10 +29,10 @@ def _warm_models():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ---- startup ----
     init_db()
     os.makedirs(settings.RECORDINGS_DIR, exist_ok=True)
-    threading.Thread(target=_warm_models, daemon=True).start()
+    if os.getenv("WARM_MODELS", "true").lower() == "true":
+        threading.Thread(target=_warm_models, daemon=True).start()
     yield
     # ---- shutdown (nothing to clean up) ----
 
