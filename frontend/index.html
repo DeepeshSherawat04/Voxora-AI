@@ -4,7 +4,23 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="Voxora AI: live AI voice sales calls with instant summaries and follow-ups." />
     <title>Voxora AI</title>
+
+    <!-- White first paint, so there is no flash while the app loads -->
+    <style>
+      html { background: #ffffff; }
+    </style>
+
+    <!-- Font loads in parallel with the app (faster than an @import inside CSS) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+    />
   </head>
   <body>
     <div id="root"></div>

@@ -50,7 +50,7 @@ def send_demo_and_meeting_email(customer_email: str, customer_name: str) -> str:
         f"Product demo: {os.environ['DEMO_LINK']}\n"
         f"Book a meeting with our team: {os.environ['MEETING_LINK']}\n\n"
         f"Reply to this email anytime if you have questions.\n\n"
-        f"Best regards,\nAria - CloudDesk Sales",
+        f"Best regards,\nVeer - CloudDesk Sales",
     )
 
 

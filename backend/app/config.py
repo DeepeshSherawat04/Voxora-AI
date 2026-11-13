@@ -21,6 +21,18 @@ class Settings(BaseSettings):
     DEMO_LINK: str = ""
     CHECKPOINT_DB_URL: str = ""   # optional; MemorySaver when empty
     AGENTS_API_KEY: str = ""   # if set, follow-up endpoints require X-API-Key header
+    ALLOWED_EMAILS: str = ""
+        # Sarvam AI (TTS now, STT next)
+    SARVAM_API_KEY: str = ""
+    SARVAM_TTS_MODEL: str = "bulbul:v4-flash"
+    SARVAM_TTS_SPEAKER: str = "simran_en_sales"
+    SARVAM_LANGUAGE: str = "en-IN"
+    SARVAM_STT_MODEL: str = "saaras:v4"
+
+    STT_KEYTERMS: str = "CloudDesk,Voxora,CRM,Aria"
+    STT_SILENCE_MS: int = 1200
+    STT_THRESHOLD: float = 0.3
+    STT_MIN_SPEECH_MS: int = 250
 
 
 settings = Settings()

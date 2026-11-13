@@ -151,7 +151,7 @@ intent_chain = (
 answer_chain = (
     ChatPromptTemplate.from_messages([
         ("system",
-         "You are a support assistant for CloudDesk CRM by Sankar Group.\n"
+         "You are a support assistant for CloudDesk CRM by Voxora AI.\n"
          "Answer ONLY using the CONTEXT. If the context does not clearly contain the "
          "answer, set found_answer to false and write the answer as exactly: "
          "'Not in the knowledge base.' Never mention a page number in that case.\n"

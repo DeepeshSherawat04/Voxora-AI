@@ -1,12 +1,327 @@
+/* Voxora AI — design system (Tailwind v4)
+   White canvas · near-black type · one brand gradient (violet → blue).
+   Inter is loaded from index.html, so there is no @import here. */
 @import "tailwindcss";
 
+/* ───────────── Tokens ───────────── */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Brand scale (violet). Neutrals come from Tailwind's zinc. */
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-signal-500: #06b6d4;
+
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ───────────── Base ───────────── */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    background-color: #fff;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background-color: #fff;
+    color: #09090b;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv11", "ss03";
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  ::selection {
+    background: rgb(139 92 246 / 0.22);
+  }
+
+  :focus-visible {
+    outline: 2px solid #7c3aed;
+    outline-offset: 2px;
+  }
+
+  /* Thin, light scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #d4d4d8 transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d4d4d8;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a1a1aa;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+/* ───────────── Keyframes (transform + opacity only) ───────────── */
 @keyframes eq {
   0%, 100% { transform: scaleY(0.25); }
-  50% { transform: scaleY(1); }
+  50%      { transform: scaleY(1); }
 }
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
-.animate-eq { transform-origin: bottom; animation: eq 0.9s ease-in-out infinite; }
-.animate-fade-up { animation: fadeUp 0.25s ease-out both; }
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes view-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes ring {
+  0%   { transform: scale(1);   opacity: 0.45; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes slide-in-right {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+/* ───────────── Animation utilities ───────────── */
+@utility animate-eq {
+  transform-origin: bottom;
+  animation: eq 0.9s ease-in-out infinite;
+}
+@utility animate-fade-up {
+  animation: fadeUp 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Page-load entrance. Stagger with style={{ "--i": n }} */
+@utility animate-reveal {
+  animation: reveal 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@utility animate-view-in {
+  animation: view-in 0.3s ease-out both;
+}
+@utility animate-ring {
+  animation: ring 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@utility animate-slide-in {
+  animation: slide-in-right 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ───────────── Surfaces ───────────── */
+/* Primary panel: white, hairline border, barely-there shadow */
+@utility card {
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 2px rgb(9 9 11 / 0.04);
+}
+/* Kept as an alias so older markup keeps working */
+@utility surface {
+  background: #fff;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.875rem;
+  box-shadow: 0 1px 2px rgb(9 9 11 / 0.04);
+}
+/* Nested block inside a panel */
+@utility surface-quiet {
+  background: #fafafa;
+  border: 1px solid #ececef;
+  border-radius: 0.625rem;
+}
+
+/* ───────────── Brand ───────────── */
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, #7c3aed 0%, #5b4bf5 55%, #3b82f6 100%);
+}
+/* Wordmark on white */
+@utility text-gradient {
+  background-image: linear-gradient(110deg, #6d28d9 0%, #4f46e5 55%, #0891b2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+/* Wordmark on black */
+@utility text-gradient-light {
+  background-image: linear-gradient(120deg, #ffffff 0%, #c4b5fd 45%, #67e8f9 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ───────────── Buttons ───────────── */
+/* Use `btn` plus one variant. Sizes: add btn-sm or btn-lg. */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: var(--btn-h, 2.5rem);
+  padding-inline: var(--btn-px, 1rem);
+  border-radius: 0.5rem;
+  font-size: var(--btn-fs, 0.875rem);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition:
+    filter 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease;
+
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+@utility btn-sm {
+  --btn-h: 2rem;
+  --btn-px: 0.75rem;
+  --btn-fs: 0.8125rem;
+}
+@utility btn-lg {
+  --btn-h: 2.75rem;
+  --btn-px: 1.25rem;
+  --btn-fs: 0.9375rem;
+}
+@utility btn-primary {
+  color: #fff;
+  background-image: linear-gradient(135deg, #7c3aed 0%, #5b4bf5 55%, #3b82f6 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.18),
+    0 1px 2px rgb(76 29 149 / 0.3);
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+  &:disabled {
+    box-shadow: none;
+  }
+}
+@utility btn-secondary {
+  color: #27272a;
+  background: #fff;
+  border: 1px solid #d4d4d8;
+  box-shadow: 0 1px 2px rgb(9 9 11 / 0.04);
+
+  &:hover:not(:disabled) {
+    background: #fafafa;
+    border-color: #a1a1aa;
+    color: #09090b;
+  }
+}
+@utility btn-dark {
+  color: #fff;
+  background: #09090b;
+
+  &:hover:not(:disabled) {
+    background: #27272a;
+  }
+}
+@utility btn-danger {
+  color: #fff;
+  background: #dc2626;
+
+  &:hover:not(:disabled) {
+    background: #b91c1c;
+  }
+}
+/* Square icon button */
+@utility btn-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e4e4e7;
+  color: #52525b;
+  background: #fff;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: #fafafa;
+    color: #09090b;
+    border-color: #d4d4d8;
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+/* ───────────── Form controls ───────────── */
+@utility label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #3f3f46;
+}
+@utility field {
+  width: 100%;
+  height: 2.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  color: #09090b;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &::placeholder {
+    color: #71717a;
+  }
+  &:hover {
+    border-color: #a1a1aa;
+  }
+  &:focus {
+    outline: none;
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 3px rgb(124 58 237 / 0.18);
+  }
+}
+
+/* ───────────── Performance helper ───────────── */
+@utility cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
+/* ───────────── Accessibility ───────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

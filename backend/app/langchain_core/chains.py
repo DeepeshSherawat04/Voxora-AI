@@ -1,18 +1,18 @@
 """
-chains.py  -  STEP 2 of LangChain: prompts, structured output and chains.
+chains.py - prompts, structured output and chains for Aria.
 
-This file rebuilds the two LLM calls from the old sales_agent.py the LangChain way:
     1. reply_chain   -> what Aria says on the live call
     2. summary_chain -> the end-of-call summary
 
-The old way:   write JSON instructions in the prompt, call the API, parse text
-               by hand, hope the JSON is valid.
-The new way:   describe the answer shape with a Pydantic class and LangChain
-               forces the model to follow it. No manual JSON parsing.
-
-THE ONE IDEA TO REMEMBER:
-    chain = prompt | model | parser
-    Read it left to right: fill the prompt -> send to model -> clean the output.
+WHAT CHANGED (fixes `tool_use_failed` / "Tool choice is required, but model did not call a tool"):
+    OLD: .with_structured_output(Schema)  -> Groq FORCES a tool call; models sometimes answer in
+         plain text instead, Groq returns HTTP 400, the retry wrapper repeats it (slow) and Aria
+         falls back to "Sorry, could you say that again?".
+    NEW: structured(llm, Schema) from llm.py -> Groq's native JSON-schema "Structured Outputs"
+         (supported on gpt-oss), with automatic fallback to plain JSON mode. No tool call involved.
+         JSON mode REQUIRES the word "JSON" and the keys to be described in the prompt, so the
+         format rules below are added to the system message.
+    ALSO: replies use low reasoning effort and a token cap, so the voice answer starts sooner.
 """
 
 from typing import List, Literal
@@ -20,27 +20,28 @@ from typing import List, Literal
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pydantic import BaseModel, Field
 
-from app.langchain_core.llm import add_retries, get_llm
+from app.langchain_core.llm import REPLY_MODEL, add_retries, get_llm, structured
 
 
 # ---------------------------------------------------------------------------
-# 1. OUTPUT SHAPES  (Pydantic classes)
+# 1. OUTPUT SHAPES
 # ---------------------------------------------------------------------------
-# A Pydantic class is just a "form" with named fields and allowed values.
-# LangChain shows this form to the model and checks the answer against it.
-# If the model returns something wrong (e.g. sentiment = "Happy"), it is caught.
 
 class AriaTurn(BaseModel):
     """One turn of the live call: what Aria says + live signals for the UI."""
 
-    reply: str = Field(description="What Aria says aloud. 1-3 short, natural sentences.")
+    reply: str = Field(description="What Aria says aloud. 1-2 short, natural sentences.")
     sentiment: Literal["Positive", "Neutral", "Negative"]
     topic: Literal["Pricing", "Features", "Demo", "Objection", "General"]
     buying_intent: int = Field(ge=0, le=100, description="How likely the customer is to buy, 0-100.")
 
 
+# Old name kept so any other import of VeerTurn keeps working.
+VeerTurn = AriaTurn
+
+
 class CallAnalysis(BaseModel):
-    """The end-of-call report. Same fields as the old summarize_call()."""
+    """The end-of-call report."""
 
     summary: str = Field(description="2-3 sentence summary of the conversation.")
     requirements: str = Field(description="What the customer needs, comma separated.")
@@ -55,20 +56,31 @@ class CallAnalysis(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 2. PROMPT TEMPLATES
+# 2. FORMAT RULES (required by JSON mode) + PROMPT TEMPLATES
 # ---------------------------------------------------------------------------
-# A prompt template is a message with "holes" like {customer_name} that get
-# filled in at run time.
-#
-# WATCH OUT: curly braces { } mean "a hole" in a template. Our long system
-# prompt has braces inside it, so we do NOT paste it directly. We pass it in
-# as a variable called {system_prompt} - then its braces are treated as plain text.
+# These are passed in as {format_rules} VARIABLES, so the braces inside are plain text.
+
+REPLY_FORMAT = """OUTPUT FORMAT: respond with ONE JSON object and nothing else (no markdown, no text
+before or after). Use exactly these keys:
+  "reply": string - ONLY Aria's next line, spoken aloud, one or two short sentences.
+           Never write the customer's lines and never continue the conversation yourself.
+  "sentiment": "Positive" | "Neutral" | "Negative"   (the customer's mood)
+  "topic": "Pricing" | "Features" | "Demo" | "Objection" | "General"
+  "buying_intent": integer from 0 to 100"""
+
+SUMMARY_FORMAT = """OUTPUT FORMAT: respond with ONE JSON object and nothing else (no markdown). Keys:
+  "summary": string, 2-3 sentences
+  "requirements": string, comma separated
+  "objections": string, comma separated, or "None"
+  "next_steps": string
+  "sales_status": one of "Converted" | "Interested" | "Follow-up Required" |
+                  "Not Interested" | "Demo Requested" | "No Response"
+  "buying_intent": integer 0-100
+  "sentiment": "Positive" | "Neutral" | "Negative" """
 
 reply_prompt = ChatPromptTemplate.from_messages([
-    ("system", "{system_prompt}"),
-    # MessagesPlaceholder = "put the whole earlier chat history here".
-    # This is how the model remembers what was said before in the call.
-    MessagesPlaceholder("history"),
+    ("system", "{system_prompt}\n\n{format_rules}"),
+    MessagesPlaceholder("history"),          # the whole earlier chat
     ("human", "{customer_text}"),
 ])
 
@@ -78,7 +90,7 @@ summary_prompt = ChatPromptTemplate.from_messages([
      "'Converted' only if the customer clearly agreed to buy. "
      "'Demo Requested' if they agreed to a demo. "
      "'Follow-up Required' if they want to think or talk to their team. "
-     "'No Response' ONLY if the customer said nothing at all."),
+     "'No Response' ONLY if the customer said nothing at all.\n\n{format_rules}"),
     ("human", "TRANSCRIPT:\n{transcript}"),
 ])
 
@@ -86,33 +98,28 @@ summary_prompt = ChatPromptTemplate.from_messages([
 # ---------------------------------------------------------------------------
 # 3. THE CHAINS
 # ---------------------------------------------------------------------------
-# .with_structured_output(AriaTurn) = "make the model answer in this exact form".
-# The result is an AriaTurn object, not a messy string.
-#
-# ORDER MATTERS: we add .with_retry() AFTER with_structured_output,
-# because a retry-wrapper can no longer be given an output shape.
+# ORDER MATTERS: add_retries() goes AFTER with_structured_output.
 
-# Friendly voice -> a bit of creativity (temperature 0.5)
-reply_chain = reply_prompt | add_retries(get_llm(0.5).with_structured_output(AriaTurn))
+# Voice reply: friendly (0.5), short answer, minimal "thinking" for speed.
+reply_chain = reply_prompt | add_retries(
+    structured(get_llm(0.5, model=REPLY_MODEL, max_tokens=700, reasoning_effort="low"), AriaTurn)
+)
 
-# Summary -> we want serious and repeatable (temperature 0.1)
-summary_chain = summary_prompt | add_retries(get_llm(0.1).with_structured_output(CallAnalysis))
+# Summary: serious and repeatable (0.1); runs once at the end of the call.
+summary_chain = summary_prompt | add_retries(
+    structured(get_llm(0.1, max_tokens=900, reasoning_effort="low"), CallAnalysis)
+)
 
 
 # ---------------------------------------------------------------------------
-# 4. HELPER FUNCTIONS (what the rest of the app calls)
+# 4. HELPERS (what the rest of the app calls) - signatures unchanged
 # ---------------------------------------------------------------------------
 
 def run_reply(system_prompt: str, history: List[dict], customer_text: str) -> AriaTurn:
-    """
-    Get Aria's next reply.
-
-    history = the old list of {"role": "user"/"assistant", "content": "..."}.
-              LangChain understands this format directly.
-    .invoke() = "run this chain once with these inputs and give me the result".
-    """
+    """Get Aria's next reply."""
     return reply_chain.invoke({
         "system_prompt": system_prompt,
+        "format_rules": REPLY_FORMAT,
         "history": history,
         "customer_text": customer_text,
     })
@@ -120,7 +127,7 @@ def run_reply(system_prompt: str, history: List[dict], customer_text: str) -> Ar
 
 def run_summary(transcript: str) -> CallAnalysis:
     """Turn a full call transcript into a structured CallAnalysis."""
-    return summary_chain.invoke({"transcript": transcript})
+    return summary_chain.invoke({"format_rules": SUMMARY_FORMAT, "transcript": transcript})
 
 
 # Quick test:  python -m app.langchain_core.chains
@@ -130,4 +137,4 @@ if __name__ == "__main__":
         history=[],
         customer_text="price kya hai?",
     )
-    print(turn)  # -> AriaTurn(reply='...', sentiment='Neutral', topic='Pricing', buying_intent=60)
+    print(turn)

@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey, create_engine
+    Column, Integer, String, Text, DateTime, ForeignKey, create_engine, text
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -26,6 +26,8 @@ class Call(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_name = Column(String(120), default="Customer")
     customer_email = Column(String(255), nullable=True)      # NEW: follow-up email recipient
+    owner_id = Column(String(64), index=True, nullable=True)  # Google account id (who owns this call)
+    owner_email = Column(String(255), nullable=True)      
     phone = Column(String(30), nullable=True)
     language = Column(String(40), default="English")
 
@@ -67,9 +69,16 @@ class Message(Base):
 
 
 def init_db():
-    """Create tables + recordings folder if missing."""
+    """Create tables + recordings folder if missing, and add new columns to existing tables."""
     os.makedirs(settings.RECORDINGS_DIR, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+
+    # create_all() does NOT add columns to a table that already exists,
+    # so we add the owner columns ourselves. IF NOT EXISTS makes this safe to run on every start.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS owner_id VARCHAR(64)"))
+        conn.execute(text("ALTER TABLE calls ADD COLUMN IF NOT EXISTS owner_email VARCHAR(255)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_calls_owner_id ON calls (owner_id)"))
 
 
 def get_db():

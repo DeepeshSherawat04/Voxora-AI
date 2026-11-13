@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.models.database import init_db
 from app.routes import calls, history, agents
+from app.auth import router as auth_router
+from app.routes import admin as admin_routes
 
 
 def _warm_models():
@@ -70,10 +72,11 @@ app.mount(
     name="recordings",
 )
 
+app.include_router(auth_router)
 app.include_router(calls.router)
 app.include_router(history.router)
 app.include_router(agents.router)
-
+app.include_router(admin_routes.router)
 
 @app.get("/health")
 def health():

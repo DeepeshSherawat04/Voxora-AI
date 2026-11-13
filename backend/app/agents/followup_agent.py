@@ -121,7 +121,7 @@ class FollowUpState(TypedDict, total=False):
     email_subject: str
     email_body: str
     problems: list          # what our automatic checkers did not like
-    fact_check: str         # "passed" or "unavailable" (shown to the human reviewer)
+    fact_check: str         # "passed" or "unavaislable" (shown to the human reviewer)
     draft_attempts: int     # how many drafts we have written so far
     human_feedback: str     # the LATEST human comment (used only for routing)
     # ALL human comments so far. Reducer = append. We keep every comment, so an
@@ -151,7 +151,7 @@ class EmailDraft(BaseModel):
 email_chain = (
     ChatPromptTemplate.from_messages([
         ("system",
-         "You write short follow-up emails for Sankar Group about CloudDesk CRM.\n"
+         "You write short follow-up emails for Voxora AI about CloudDesk CRM.\n"
          "Facts you may use:\n" + PRODUCT_FACTS + "\n"
          "Rules: never invent prices, discounts, features or contract terms. "
          "Use ONLY the facts above. "
@@ -160,7 +160,7 @@ email_chain = (
          "This email itself contains the details the customer asked for. "
          "Never promise to send, share or forward any other document, overview or material. "
          "Never include links or web addresses. "
-         "Sign off as 'Aria, Sankar Group'. Never use placeholders like [Your Name]. "
+         "Sign off as 'Veer, Voxora AI'. Never use placeholders like [Your Name]. "
          "Under 120 words. Mention the agreed next steps."),
         ("human",
          "Customer name: {customer_name}\n"
@@ -300,6 +300,7 @@ def _deliver_email(to_name: str, to_email: str, subject: str, body: str, idempot
     print(f"\n[EMAIL SENT] {result}")
     return True
 
+
 def route_after_security(state: FollowUpState) -> str:
     """Hard block goes straight to END; everything else goes to the human."""
     if state.get("security_flag") == "hard_block":
@@ -382,7 +383,7 @@ def find_rule_problems(body: str) -> list:
 
     # Rule 4: no unfilled placeholders such as [Your Name] or [Company].
     if re.search(r"\[[^\]]+\]", body):
-        problems.append("Remove placeholders in [brackets]. Sign off as 'Aria, Sankar Group'.")
+        problems.append("Remove placeholders in [brackets]. Sign off as 'Veer, Voxora AI'.")
 
     # Rule 5: we never attach files, so the email must not claim it did.
     if re.search(r"attach|enclos", body, re.I):
@@ -400,6 +401,7 @@ def find_rule_problems(body: str) -> list:
         problems.append("Do not promise to send any document or material. This email IS the details.")
 
     return problems
+
 
 # ---------------------------------------------------------------------------
 # SECURITY GUARDRAILS  (added for production / recruiter demo)
@@ -419,6 +421,7 @@ def _known_secrets() -> list:
         if value and len(value) >= 8:          # ignore short/empty values
             values.append(value)
     return values
+
 
 SECRET_PATTERNS = [
     # Gmail app-password shape, but ONLY next to a credential keyword -
@@ -536,6 +539,7 @@ def check_facts(state: FollowUpState) -> dict:
     return {"problems": [problem], "fact_check": "failed",
             "events": [f"fact check FAILED: {verdict.unsupported}"]}
 
+
 def security_check(state: FollowUpState) -> dict:
     """
     STEP 3c: SECURITY GATE - sits between the fact checker and the human.
@@ -625,14 +629,20 @@ def send_email(state: FollowUpState) -> dict:
     if not state.get("approved"):
         raise PermissionError("Refusing to send: no human approval.")
 
+    # If there's no valid recipient, stop safely instead of sending anywhere.
+    to_email = (state.get("customer_email") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", to_email):
+        return {"outcome": "needs_manual",
+                "events": ["no valid customer email -> email NOT sent"]}
+
     sent = _deliver_email(
         to_name=state["customer_name"],
-        to_email=state.get("customer_email", ""),
+        to_email=to_email,                      # <- use the checked value
         subject=state["email_subject"],
         body=state["email_body"],
         idempotency_key=f"followup-{state['call_id']}",
     )
-    note = "email sent" if sent else "duplicate blocked (already sent before)"
+    note = f"email sent to {to_email}" if sent else "duplicate blocked (already sent before)"
     return {"outcome": "sent", "events": [note]}
 
 
@@ -819,11 +829,11 @@ def submit_decision(call_id: str, approved: bool, feedback: str = "") -> dict:
 # 8. TRY IT  -  run with:  python -m app.agents.followup_agent
 # ---------------------------------------------------------------------------
 
-SAMPLE_TRANSCRIPT = """Aria: Hello Rahul! Are you using any tool to manage your customers today?
+SAMPLE_TRANSCRIPT = """Veer: Hello Rahul! Are you using any tool to manage your customers today?
 Rahul: We use Excel sheets. It is getting messy with 12 salespeople.
-Aria: CloudDesk gives one shared pipeline so there are no version conflicts. Want a free demo?
+Veer: CloudDesk gives one shared pipeline so there are no version conflicts. Want a free demo?
 Rahul: Sounds interesting. What is the price?
-Aria: Rs 799 per user per month. I can book a free live demo this week.
+Veer: Rs 799 per user per month. I can book a free live demo this week.
 Rahul: Let me talk to my team first. Send me the details by email."""
 
 
@@ -831,7 +841,7 @@ if __name__ == "__main__":
     # Print the flowchart in Mermaid text (paste it into mermaid.live to see the picture).
     print(get_followup_graph().get_graph().draw_mermaid())
 
-    CALL_ID = "demo-002"   # bump this each run: demo-003, demo-004, ...
+    CALL_ID = "demo-003"   # bump this each run: demo-003, demo-004, ...
 
     status = start_followup(CALL_ID, "Rahul", SAMPLE_TRANSCRIPT,
                             "deepeshsherawat1290@gmail.com")

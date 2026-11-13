@@ -1,130 +1,244 @@
 // frontend/src/components/LiveCallPanel.jsx
-import { useState } from "react";
-import { Bot, Mic, MicOff, Phone, PhoneOff, Volume2, VolumeX } from "lucide-react";
+import { useId, useState } from "react";
+import { Bot, Check, Loader2, Mic, MicOff, Phone, PhoneOff, TriangleAlert, Volume2, VolumeX } from "lucide-react";
+import { fmtClock } from "../lib/format";
+import { Avatar, PanelHeader, TonePill } from "./ui";
 
-const fmt = (s) =>
-  `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+// Computed once, not on every render.
+const BARS = Array.from({ length: 26 }, (_, i) => ({
+  delay: (i % 7) * 0.13,
+  height: 10 + ((i * 7) % 22),
+}));
 
-export default function LiveCallPanel({ phase, elapsed, live, customerName, consent,
-                                        muted, error, hasVoice,
-                                        onStart, onEnd, onToggleMute }) {
-  const [name, setName] = useState("Rahul Verma");
-  const [email, setEmail] = useState("");           // NEW: customer email for follow-up
-  const [agree, setAgree] = useState(true);
-  const [speakerOn, setSpeakerOn] = useState(true);
+/** Panel shell. Changing `key` remounts it, which replays the fade between idle and in-call. */
+function Shell({ children }) {
+  return <div className="card animate-view-in flex h-[560px] flex-col overflow-hidden xl:h-full">{children}</div>;
+}
 
+function Field({ id, label, hint, children }) {
+  return (
+    <div>
+      <label htmlFor={id} className="label">
+        {label}
+      </label>
+      {children}
+      {hint && <p className="mt-1.5 text-xs text-zinc-500">{hint}</p>}
+    </div>
+  );
+}
+
+function ControlButton({ label, onClick, active = false, pressed, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={pressed}
+      className={`flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl border text-xs font-medium transition active:translate-y-px ${
+        active
+          ? "border-zinc-950 bg-zinc-950 text-white"
+          : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50"
+      }`}
+    >
+      {children}
+      {label}
+    </button>
+  );
+}
+
+export default function LiveCallPanel({
+  phase, elapsed, live, customerName, consent,
+  muted, error, hasVoice, speakerOn,
+  onStart, onEnd, onToggleMute, onToggleSpeaker,
+}) {
+  const uid = useId();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [agree, setAgree] = useState(false);
+
+  /* ───────────── Idle / connecting / ended ───────────── */
   if (phase !== "in_call") {
+    const connecting = phase === "connecting";
     return (
-      <div className="rounded-3xl bg-white/70 backdrop-blur border border-purple-100 shadow-xl p-6 h-[620px] flex flex-col items-center justify-center text-center gap-4">
-        <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-300">
-          <Phone className="w-10 h-10 text-white" />
-        </div>
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">
-            {phase === "ended" ? "Start a new call" : "Start a sales call"}
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">Aria will pitch CloudDesk CRM live.</p>
-        </div>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name"
-          className="w-full max-w-xs rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Customer email (for follow-up)" type="email"
-          className="w-full max-w-xs rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
-        <label className="flex items-start gap-2 text-xs text-slate-500 text-left max-w-xs">
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)}
-            className="mt-0.5 accent-purple-600" />
-          <span>The customer consents to this call being recorded for quality and training purposes.</span>
-        </label>
-        <button disabled={!agree || phase === "connecting"}
-          onClick={() => onStart({ name: name.trim() || "Customer", consent: agree, customer_email: email.trim() })}
-          className="rounded-full px-8 py-3 font-semibold text-white bg-gradient-to-r from-purple-600 to-blue-600 shadow-lg shadow-purple-200 hover:opacity-95 disabled:opacity-50">
-          {phase === "connecting" ? "Connecting…" : "Start Call"}
-        </button>
-        {error && <p className="text-xs text-red-500">{error}</p>}
-        {!hasVoice && (
-          <p className="text-xs text-amber-600 max-w-xs">
-            Voice input isn't supported in this browser — you can still type replies during the call. Use Chrome/Edge for full voice.
-          </p>
-        )}
-      </div>
+      <Shell key="idle">
+        <PanelHeader
+          title={phase === "ended" ? "Start a new call" : "Start a sales call"}
+          description="Enter the customer's details to begin."
+          right={
+            <span className="bg-brand-gradient grid size-8 place-items-center rounded-lg text-white shadow-sm">
+              <Phone className="size-4" strokeWidth={2} />
+            </span>
+          }
+        />
+
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (connecting) return;
+            onStart({ name: name.trim() || "Customer", consent: agree, email: email.trim() });
+          }}
+        >
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            <Field id={`${uid}-name`} label="Customer name">
+              <input
+                id={`${uid}-name`}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Rahul Verma"
+                autoComplete="off"
+                className="field"
+              />
+            </Field>
+
+            <Field id={`${uid}-email`} label="Customer email" hint="Used to draft the follow-up email after the call.">
+              <input
+                id={`${uid}-email`}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@company.com"
+                type="email"
+                autoComplete="off"
+                className="field"
+              />
+            </Field>
+
+            <label className="flex cursor-pointer select-none items-start gap-3 rounded-lg border border-zinc-200 p-3.5 text-left transition-colors hover:bg-zinc-50">
+              <input
+                type="checkbox"
+                checked={agree}
+                onChange={(e) => setAgree(e.target.checked)}
+                className="peer sr-only"
+              />
+              <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center rounded-[5px] border border-zinc-400 bg-white transition duration-150 peer-checked:border-violet-600 peer-checked:bg-violet-600 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-500/50 peer-checked:[&_svg]:scale-100">
+                <Check className="size-3 scale-0 text-white transition-transform duration-150" strokeWidth={3} />
+              </span>
+              <span className="text-[13px] leading-relaxed text-zinc-700">
+                <span className="block font-medium text-zinc-900">Recording consent</span>
+                The customer consents to this call being recorded for quality and training purposes.
+              </span>
+            </label>
+
+            {!agree && (
+              <p className="text-xs leading-relaxed text-zinc-500">
+                Without consent, the call is not recorded.
+              </p>
+            )}
+
+            {error && (
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-relaxed text-red-800"
+              >
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                {error}
+              </p>
+            )}
+            {!hasVoice && (
+              <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+                Voice input isn't supported in this browser — you can still type replies during the call. Use
+                Chrome or Edge for full voice.
+              </p>
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-zinc-200 p-4">
+            <button type="submit" disabled={connecting} className="btn btn-primary btn-lg w-full">
+              {connecting ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" /> Connecting…
+                </>
+              ) : (
+                <>
+                  <Phone className="size-4" /> Start call
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Shell>
     );
   }
 
+  /* ───────────── In call ───────────── */
   return (
-    <div className="rounded-3xl bg-gradient-to-b from-purple-100/80 to-blue-100/60 border border-purple-100 shadow-xl p-6 h-[620px] overflow-y-auto flex flex-col items-center">
-      <div className="flex items-center justify-between self-stretch">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-green-700">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> In Call
-        </span>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-red-600">
-          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          Recording · consent {consent ? "given" : "declined"}
-        </span>
-      </div>
+    <Shell key="call">
+      <PanelHeader
+        title="In call"
+        description={`Talking to ${customerName}`}
+        right={
+          <TonePill tone={consent ? "danger" : "neutral"}>
+            {consent ? "Recording" : "Not recording"}
+          </TonePill>
+        }
+      />
 
-      <div className="mt-5 text-5xl font-extrabold tracking-tight text-slate-800 tabular-nums">
-        {fmt(elapsed)}
-      </div>
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-5 py-5">
+        <div className="flex items-center gap-2.5">
+          <Avatar name={customerName} size="sm" dark />
+          <span className="max-w-[12rem] truncate text-sm font-medium text-zinc-900">{customerName}</span>
+        </div>
 
-      <div className="relative my-7">
-        {live.speaking && <div className="absolute inset-0 rounded-full bg-purple-400/40 animate-ping" />}
-        <div className="w-36 h-36 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center shadow-2xl shadow-purple-300 ring-8 ring-purple-200/60">
-          <Bot className="w-14 h-14 text-white" />
+        <div className="mt-3 text-5xl font-light tabular-nums tracking-tight text-zinc-950">{fmtClock(elapsed)}</div>
+
+        <div className="relative my-6 grid size-28 shrink-0 place-items-center">
+          <span aria-hidden className="absolute inset-0 rounded-full border border-zinc-200" />
+          {live.speaking && (
+            <>
+              <span aria-hidden className="animate-ring absolute inset-0 m-auto size-24 rounded-full border border-violet-400/60" />
+              <span
+                aria-hidden
+                className="animate-ring absolute inset-0 m-auto size-24 rounded-full border border-violet-400/60"
+                style={{ animationDelay: "1.1s" }}
+              />
+            </>
+          )}
+          <span className="bg-brand-gradient relative grid size-24 place-items-center rounded-full shadow-[0_12px_32px_-12px_rgb(91_75_245/0.7)] ring-1 ring-white/30">
+            <Bot className="size-10 text-white" strokeWidth={1.5} />
+          </span>
+        </div>
+
+        {/* Bars move while the agent speaks, rest otherwise */}
+        <div aria-hidden className="flex h-6 items-end gap-[3px]">
+          {BARS.map((b, i) => (
+            <span
+              key={i}
+              className={`w-1 origin-bottom rounded-full bg-gradient-to-t from-violet-600 to-cyan-500 ${
+                live.speaking ? "animate-eq" : "scale-y-[0.2]"
+              }`}
+              style={{ animationDelay: `${b.delay}s`, height: `${Math.min(b.height, 24)}px` }}
+            />
+          ))}
+        </div>
+
+        <div className="mt-4 text-center" aria-live="polite">
+          <p className="text-sm font-medium text-zinc-950">
+            {live.speaking ? "Voxora is speaking" : muted ? "Microphone muted" : "Listening…"}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {live.speaking ? "The AI agent has the floor" : muted ? "Unmute to talk" : "Speak when you're ready"}
+          </p>
         </div>
       </div>
 
-      <div className="flex items-end gap-[3px] h-8">
-        {Array.from({ length: 28 }).map((_, i) => (
-          <span key={i} className="w-1 rounded-full bg-gradient-to-t from-purple-500 to-blue-400 animate-eq"
-            style={{ animationDelay: `${(i % 7) * 0.13}s`, height: `${10 + ((i * 7) % 22)}px` }} />
-        ))}
-      </div>
+      <div className="grid shrink-0 grid-cols-3 gap-2.5 border-t border-zinc-200 p-4">
+        <ControlButton label={muted ? "Unmute" : "Mute"} onClick={onToggleMute} active={muted} pressed={muted}>
+          {muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </ControlButton>
 
-      <p className="mt-3 text-sm text-slate-600">
-        <span className="font-semibold text-slate-800">
-          {live.speaking ? "Aria is speaking" : muted ? "Microphone muted" : "Listening…"}
-        </span>
-        {" · talking to "}{customerName}
-      </p>
-
-      <div className="mt-6 flex items-center gap-6">
-        <button onClick={onToggleMute} className="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-800">
-          <span className="w-12 h-12 rounded-full bg-white shadow flex items-center justify-center">
-            {muted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-          </span>
-          <span className="text-xs">{muted ? "Unmute" : "Mute"}</span>
+        <button
+          type="button"
+          onClick={onEnd}
+          className="flex h-16 flex-col items-center justify-center gap-1.5 rounded-xl bg-red-600 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 active:translate-y-px"
+        >
+          <PhoneOff className="size-5" />
+          End call
         </button>
-        <button onClick={onEnd} className="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-800">
-          <span className="w-16 h-16 rounded-full bg-red-500 shadow-lg shadow-red-200 flex items-center justify-center hover:bg-red-600">
-            <PhoneOff className="w-7 h-7 text-white" />
-          </span>
-          <span className="text-xs">End Call</span>
-        </button>
-        <button onClick={() => setSpeakerOn((s) => !s)} className="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-800">
-          <span className="w-12 h-12 rounded-full bg-white shadow flex items-center justify-center">
-            {speakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-          </span>
-          <span className="text-xs">Speaker</span>
-        </button>
-      </div>
 
-      <div className="mt-8 w-full rounded-2xl bg-white/80 p-4">
-        <div className="flex justify-between items-center text-xs font-semibold">
-          <span className="tracking-wider text-slate-500">LIVE BUYING INTENT</span>
-          <span className="text-purple-700 text-base">{live.buying_intent}%</span>
-        </div>
-        <div className="mt-2 h-2.5 rounded-full bg-slate-200 overflow-hidden">
-          <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-purple-600 transition-all duration-700"
-            style={{ width: `${live.buying_intent}%` }} />
-        </div>
-        <div className="mt-3 flex gap-2 flex-wrap">
-          <span className="rounded-full bg-green-100 text-green-700 px-3 py-1 text-xs font-medium">
-            Sentiment: {live.sentiment}
-          </span>
-          <span className="rounded-full bg-amber-100 text-amber-700 px-3 py-1 text-xs font-medium">
-            Topic: {live.topic}
-          </span>
-        </div>
+        <ControlButton label="Speaker" onClick={onToggleSpeaker} active={!speakerOn} pressed={!speakerOn}>
+          {speakerOn ? <Volume2 className="size-5" /> : <VolumeX className="size-5" />}
+        </ControlButton>
       </div>
-    </div>
+    </Shell>
   );
 }

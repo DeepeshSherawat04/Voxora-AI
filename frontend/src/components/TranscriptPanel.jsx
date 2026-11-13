@@ -1,84 +1,125 @@
-// TranscriptPanel.jsx
-import { useEffect, useRef, useState } from "react";
-import { Send } from "lucide-react";
+// frontend/src/components/TranscriptPanel.jsx
+import { memo, useEffect, useRef, useState } from "react";
+import { Languages, MessagesSquare, Send } from "lucide-react";
+import { fmtTime } from "../lib/format";
+import { ChatBubble, EmptyState, PanelHeader } from "./ui";
 
-const fmtTs = (iso) =>
-  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-2.5 px-1 text-xs font-medium text-violet-700" role="status">
+      <span className="flex gap-1" aria-hidden>
+        {[0, 1, 2].map((d) => (
+          <span
+            key={d}
+            className="size-1.5 animate-bounce rounded-full bg-violet-500"
+            style={{ animationDelay: `${d * 0.15}s` }}
+          />
+        ))}
+      </span>
+      Voxora is typing…
+    </div>
+  );
+}
 
-export default function TranscriptPanel({ transcript, phase, customerName, typing, onSend }) {
-  const bottomRef = useRef(null);
+function TranscriptPanel({ transcript, phase, customerName, typing, onSend }) {
+  const scrollRef = useRef(null);
+  const stickRef = useRef(true); // true while the user is reading the latest messages
   const [draft, setDraft] = useState("");
 
+  // Don't yank the view down if the user scrolled up to re-read something.
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    if (transcript.length === 0) stickRef.current = true;
+    if (stickRef.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [transcript.length, typing]);
 
   const submit = (e) => {
     e.preventDefault();
     if (!draft.trim()) return;
+    stickRef.current = true;
     onSend(draft);
     setDraft("");
   };
 
+  const inCall = phase === "in_call";
+
   return (
-    <div className="rounded-3xl bg-white border border-slate-200 shadow-xl flex flex-col h-[620px]">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <h3 className="font-bold">Live Transcript</h3>
-          {phase === "in_call" && (
-            <span className="text-[10px] font-bold text-red-600 bg-red-100 rounded-md px-1.5 py-0.5">LIVE</span>
-          )}
-        </div>
-        <span className="text-xs bg-purple-50 text-purple-600 rounded-full px-2.5 py-1 font-medium">
-          Auto-detected: English + Hinglish
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {transcript.length === 0 && (
-          <p className="text-center text-sm text-slate-400 mt-24">Start a call to see the live transcript…</p>
-        )}
-        {transcript.map((m, i) =>
-          m.sender === "ai" ? (
-            <div key={i} className="animate-fade-up">
-              <p className="text-[11px] text-slate-400 mb-1">Aria · {fmtTs(m.timestamp)}</p>
-              <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-purple-50 border border-purple-100 px-4 py-2.5 text-sm text-slate-700">
-                {m.text}
-              </div>
-            </div>
-          ) : (
-            <div key={i} className="flex flex-col items-end animate-fade-up">
-              <p className="text-[11px] text-slate-400 mb-1">{customerName} · {fmtTs(m.timestamp)}</p>
-              <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-white border border-slate-200 px-4 py-2.5 text-sm text-slate-700 shadow-sm">
-                {m.text}
-              </div>
-            </div>
-          )
-        )}
-        {typing && (
-          <div className="flex items-center gap-2 text-purple-500 text-xs font-medium">
-            <span className="flex gap-1">
-              {[0, 1, 2].map((d) => (
-                <span key={d} className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-bounce"
-                  style={{ animationDelay: `${d * 0.15}s` }} />
-              ))}
+    <div className="card flex h-[560px] flex-col overflow-hidden xl:h-full">
+      <PanelHeader
+        title="Live transcript"
+        description={transcript.length ? `${transcript.length} message${transcript.length === 1 ? "" : "s"}` : undefined}
+        right={
+          <div className="flex items-center gap-2">
+            {inCall && (
+              // Static on purpose: nothing blinks while the customer is talking.
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 ring-1 ring-inset ring-emerald-600/20">
+                <span className="size-1.5 rounded-full bg-emerald-500" />
+                Live
+              </span>
+            )}
+            <span className="hidden items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700 ring-1 ring-inset ring-zinc-500/20 sm:inline-flex">
+              <Languages className="size-3.5" />
+              English + Hinglish
             </span>
-            Aria is typing…
           </div>
+        }
+      />
+
+      {/* Messages */}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        role="log"
+        aria-label="Call transcript"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5"
+      >
+        {transcript.length === 0 && (
+          <EmptyState icon={MessagesSquare} title="No conversation yet" className="h-full">
+            Start a call to see the live transcript.
+          </EmptyState>
         )}
-        <div ref={bottomRef} />
+
+        {transcript.map((m, i) => {
+          const isAi = m.sender === "ai";
+          return (
+            <ChatBubble
+              key={i}
+              isAi={isAi}
+              name={isAi ? "Voxora AI" : customerName}
+              time={fmtTime(m.timestamp)}
+              text={m.text}
+              partial={!!m.partial}
+            />
+          );
+        })}
+
+        {typing && <TypingIndicator />}
       </div>
 
-      {phase === "in_call" && (
-        <form onSubmit={submit} className="p-3 border-t border-slate-100 flex gap-2">
-          <input value={draft} onChange={(e) => setDraft(e.target.value)}
+      {/* Reply box */}
+      {inCall && (
+        <form onSubmit={submit} className="flex shrink-0 gap-2 border-t border-zinc-200 p-3">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
             placeholder="Type a reply (or just speak)…"
-            className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400" />
-          <button className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center hover:bg-purple-700">
-            <Send className="w-4 h-4" />
+            aria-label="Type a reply"
+            className="field min-w-0 flex-1"
+          />
+          <button type="submit" aria-label="Send reply" disabled={!draft.trim()} className="btn btn-primary w-10 !px-0">
+            <Send className="size-4" />
           </button>
         </form>
       )}
     </div>
   );
 }
+
+export default memo(TranscriptPanel);

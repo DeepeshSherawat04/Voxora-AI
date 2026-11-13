@@ -2,7 +2,7 @@
 
 **An AI voice bot that sells SaaS over a real-time phone-style conversation — with live transcription, call recording, AI summaries, and automatic sales-status classification.**
 
-Built in 48 hours for the **Sankar Group Intern Assignment**
+Built in 48 hours for the **Voxora AI Intern Assignment**
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.156-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
@@ -17,8 +17,8 @@ Built in 48 hours for the **Sankar Group Intern Assignment**
 
 ## 🧠 What it does
 
-Voxora's agent **"Aria"** conducts a real, unscripted voice sales call for a SaaS product
-(CloudDesk CRM). The customer speaks naturally — Aria listens, understands, answers
+Voxora's agent **"Veer"** conducts a real, unscripted voice sales call for a SaaS product
+(CloudDesk CRM). The customer speaks naturally — Veer listens, understands, answers
 objections, mirrors the customer's language (English / Hinglish), and steers the
 conversation toward a close. When the call ends, the pipeline automatically produces a
 structured summary, objections, next steps, and one of six sales dispositions.
@@ -115,7 +115,7 @@ Tables auto-create on startup (Base.metadata.create_all)
 
 backend/
 ├── app/
-│   ├── agents/sales_agent.py     # Aria: prompts, state, reply + summary logic
+│   ├── agents/sales_agent.py     # Veer: prompts, state, reply + summary logic
 │   ├── models/                   # SQLAlchemy models + Pydantic schemas
 │   ├── routes/                   # WebSocket call loop + REST history/recording
 │   ├── services/groq_llm.py      # Groq client: JSON mode + retry/backoff
