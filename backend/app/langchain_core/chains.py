@@ -13,6 +13,9 @@ WHAT CHANGED (fixes `tool_use_failed` / "Tool choice is required, but model did 
          JSON mode REQUIRES the word "JSON" and the keys to be described in the prompt, so the
          format rules below are added to the system message.
     ALSO: replies use low reasoning effort and a token cap, so the voice answer starts sooner.
+
+THIS VERSION: reply max_tokens raised 700 -> 1000. gpt-oss spends part of the cap on hidden
+    reasoning tokens; if the cap runs out the JSON is cut off, parsing fails and Aria falls back.
 """
 
 from typing import List, Literal
@@ -101,8 +104,9 @@ summary_prompt = ChatPromptTemplate.from_messages([
 # ORDER MATTERS: add_retries() goes AFTER with_structured_output.
 
 # Voice reply: friendly (0.5), short answer, minimal "thinking" for speed.
+# max_tokens 1000 (was 700): leaves room for reasoning tokens so the JSON is never cut off.
 reply_chain = reply_prompt | add_retries(
-    structured(get_llm(0.5, model=REPLY_MODEL, max_tokens=700, reasoning_effort="low"), AriaTurn)
+    structured(get_llm(0.5, model=REPLY_MODEL, max_tokens=1000, reasoning_effort="low"), AriaTurn)
 )
 
 # Summary: serious and repeatable (0.1); runs once at the end of the call.

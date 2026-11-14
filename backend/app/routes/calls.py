@@ -43,9 +43,15 @@ def _find_email(texts) -> str:
 
 
 def _is_echo_of(text: str, last_ai: str) -> bool:
-    """True if the 'customer' turn is just the agent's own voice returning via speakers."""
+    """True if the 'customer' turn is just the agent's own voice returning via speakers.
+
+    Short customer answers ("yes", "ok", "Excel") must NEVER be treated as echo, so both
+    checks only apply once the customer's line is long enough to be a real repeat.
+    """
     a, b = text.lower().strip(), (last_ai or "").lower().strip()
     if not a or not b:
+        return False
+    if len(a) < 12:                      # too short to be an echo of a whole agent sentence
         return False
     if a in b or b in a:                 # one line sits inside the other
         return True
@@ -177,11 +183,13 @@ async def call_socket(websocket: WebSocket):
                 db.commit()
                 db.refresh(call)
 
-                # NEW: read the customer's email sent by the frontend
+                # read the customer's email sent by the frontend
                 customer_email = (msg.get("customer_email") or "").strip()
 
+                # FIX: pass the form email to the agent, so it knows the email is already collected
                 agent = SalesAgent(customer_name=call.customer_name,
-                                   language=call.language)
+                                   language=call.language,
+                                   customer_email=customer_email)
 
                 await websocket.send_json({
                     "type": "call_started",

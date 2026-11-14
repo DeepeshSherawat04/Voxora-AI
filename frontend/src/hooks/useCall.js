@@ -14,6 +14,11 @@ const hasVoice = !!(
 const FRAME_SAMPLES = 1600;     // 100 ms of 16 kHz audio per websocket frame
 const RESUME_HOLD_MS = 700;     // was 400 - ignore the mic after the agent stops talking, so speaker echo can die out
 
+// ---------- Sarvam TTS reliability ----------
+const TTS_TIMEOUT_MS = 10000;       // was 8000 - give Sarvam a little longer before giving up
+const TTS_RETRIES = 2;              // retry Sarvam this many extra times before failing
+const ALLOW_BROWSER_VOICE = false;  // false = never switch to the Chrome voice (reply shows as text only)
+
 // ---------- barge-in (customer interrupts the agent) ----------
 const BARGE_IN_ENABLED = true;  // set false if the agent keeps cutting itself off (speaker echo)
 const BARGE_MS = 350;           // customer must keep talking this long to count as an interruption
@@ -138,7 +143,7 @@ export function useCall(onCallEnded) {
   const consentRef = useRef(false);
   const turnT0Ref = useRef(0);              // for latency logging in the console
 
-  // ---------- speech (Sarvam TTS, browser voice as fallback) ----------
+  // ---------- speech (Sarvam TTS; browser voice only if ALLOW_BROWSER_VOICE) ----------
   const stopAudio = useCallback(() => {
     speakIdRef.current += 1;                       // anything still loading is now stale
     const a = audioRef.current;
@@ -168,28 +173,40 @@ export function useCall(onCallEnded) {
     window.speechSynthesis.speak(u);
   }, []);
 
-  // Download one TTS clip (does NOT play it). Returns a blob URL, or null on failure.
+  // What to do when Sarvam audio is unavailable: use the browser voice, or just stay silent.
+  const voiceFallback = useCallback((text, onDone) => {
+    if (ALLOW_BROWSER_VOICE) browserSpeak(text, onDone);
+    else onDone?.();
+  }, [browserSpeak]);
+
+  // Download one TTS clip (does NOT play it). Retries Sarvam before giving up.
+  // Returns a blob URL, or null on failure.
   const fetchTtsUrl = useCallback(async (text) => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-    try {
-      const res = await apiFetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: ctrl.signal,
-      });
-      if (res.ok === false) throw new Error(`TTS failed (${res.status})`);
-      return URL.createObjectURL(await res.blob());
-    } catch (err) {
-      console.warn("Sarvam TTS failed, using browser voice:", err);
-      return null;
-    } finally {
-      clearTimeout(timer);
+    for (let attempt = 0; attempt <= TTS_RETRIES; attempt++) {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), TTS_TIMEOUT_MS);
+      try {
+        const res = await apiFetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: ctrl.signal,
+        });
+        if (res.ok === false) throw new Error(`TTS failed (${res.status})`);
+        return URL.createObjectURL(await res.blob());
+      } catch (err) {
+        console.warn(`Sarvam TTS attempt ${attempt + 1} of ${TTS_RETRIES + 1} failed:`, err);
+        if (attempt < TTS_RETRIES) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));   // short pause, then retry
+        }
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    return null;
   }, [apiFetch]);
 
-  // Play one clip; resolves when it ends (or is cancelled / fails over to browser voice).
+  // Play one clip; resolves when it ends (or is cancelled / fails over).
   const playChunk = useCallback((url, text, id) => new Promise((resolve) => {
     if (id !== speakIdRef.current) { if (url) URL.revokeObjectURL(url); resolve(); return; }
     let settled = false;
@@ -201,7 +218,7 @@ export function useCall(onCallEnded) {
     };
     playResolveRef.current = done;
 
-    if (!url) { browserSpeak(text, done); return; }
+    if (!url) { voiceFallback(text, done); return; }
 
     const audio = new Audio(url);
     audioRef.current = audio;
@@ -211,12 +228,12 @@ export function useCall(onCallEnded) {
     };
     const fallback = () => {
       release();
-      if (id === speakIdRef.current) browserSpeak(text, done); else done();
+      if (id === speakIdRef.current) voiceFallback(text, done); else done();
     };
     audio.onended = () => { release(); done(); };
     audio.onerror = fallback;
     audio.play().catch(fallback);
-  }), [browserSpeak]);
+  }), [voiceFallback]);
 
   // Speak chunks in order. Clip 2 is already downloading while clip 1 plays.
   const speakReply = useCallback(async (chunks, urlPromises, id) => {

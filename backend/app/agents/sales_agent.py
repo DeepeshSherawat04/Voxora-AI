@@ -2,10 +2,13 @@
 sales_agent.py - Aria, the live voice sales agent (powered by LangChain).
 
 CHANGES IN THIS VERSION
-    * Prices are written the way they are SPOKEN ("799 rupees"), because the TTS reads "Rs 799"
-      letter by letter. The old PRODUCT_BRIEF / rule 4 contradicted rule 16 and the model copied them.
-    * Rules 2 and 15 (short replies) merged; rule numbering otherwise unchanged.
-    * Shorter, human greeting (less audio to synthesise = faster first words).
+    * FIX "Sorry, could you say that again?" loop: a failed/empty LLM reply is now retried once,
+      and if it still fails Aria uses a context-aware fallback (Excel, price, demo, email...)
+      instead of the same "say that again" line. The real error is logged loudly.
+    * SMARTER: Aria now remembers facts (current tool, team size, price/demo interest), is told a
+      conversation STAGE (discovery -> pitch -> close) and is told not to re-ask known things.
+    * Rule 17 narrowed: short answers like "Excel", "yes", "I am" are VALID answers.
+    * Prices are written the way they are SPOKEN ("799 rupees").
     * Everything else (email masking, guardrails, summary) is unchanged.
 """
 import logging
@@ -18,6 +21,20 @@ from app.models.schemas import CallSummary
 MAX_TURNS = 14  # safety valve: agent steers to a close after this
 
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+# Facts we pull out of what the customer says (cheap regex, no LLM call)
+TOOL_RE = re.compile(
+    r"\b(excel|spreadsheets?|google sheets?|sheets?|zoho|hubspot|salesforce|pipedrive|"
+    r"notebook|diary|register|paper)\b", re.IGNORECASE)
+TEAM_RE = re.compile(
+    r"\b(\d{1,3})\s*(?:people|persons|members|reps|salespeople|sales people|employees|users)\b",
+    re.IGNORECASE)
+PRICE_RE = re.compile(r"\b(price|pricing|cost|costs|kitna|rate|charges?)\b", re.IGNORECASE)
+DEMO_RE = re.compile(r"\bdemo\b", re.IGNORECASE)
+NO_INTEREST_RE = re.compile(r"\b(not interested|no thanks|no thank you|don'?t call|nahi chahiye)\b",
+                            re.IGNORECASE)
+EMAIL_WORD_RE = re.compile(r"\b(e-?mail|mail)\b", re.IGNORECASE)
+YES_RE = re.compile(r"^\s*(yes|yeah|yep|sure|ok|okay|haan|ha|i am|i do|of course)\b", re.IGNORECASE)
 
 # Replies that promise an email
 PROMISE_RE = re.compile(
@@ -84,12 +101,17 @@ Rules:
     ("Thanks for clarifying" or "Got it, 8 people then") and answer using the NEW
     information. Never argue, never repeat the old answer, and don't finish your
     previous sentence.
-17. UNCLEAR OR NOISY INPUT: if the customer's message is garbled, unrelated to the
-    conversation, or looks like background chatter or a TV, don't answer it as if
-    it were real. Say "Sorry, I didn't catch that - could you say it again?"
-    Never guess a number, name or email from unclear speech; ask them to repeat it.
+17. UNCLEAR INPUT: ONLY if the message is truly garbled or clearly background
+    chatter or a TV, say "Sorry, I didn't catch that - could you say it again?".
+    Short answers such as "Excel", "yes", "I am", "about 10 people" or "price?"
+    ARE clear: they answer your last question, so use them and move forward.
+    Never guess a number, name or email from unclear speech.
 18. ONE TURN ONLY: write only Aria's next line. Never write the customer's
     reply and never answer for them.
+19. NEVER ASK THE SAME QUESTION TWICE. Read the chat and the "WHAT YOU ALREADY
+    KNOW" line: if the customer has answered something, build on that answer
+    (react to it, connect it to one CloudDesk feature) and ask a NEW question.
+    If they answer "yes" or "I am" to your question, treat it as a yes.
 """
 
 
@@ -103,6 +125,53 @@ class SalesAgent:
         self.sentiment = "Neutral"
         self.topic = "General"
         self.turn_count = 0
+        self.facts: dict = {}           # things the customer already told us
+        self._fallback_count = 0        # rotates fallback lines so they never repeat
+
+    # ---------- memory + stage (makes Aria smarter) ----------
+
+    def _update_facts(self, text: str) -> None:
+        m = TOOL_RE.search(text)
+        if m:
+            self.facts["current_tool"] = m.group(1).lower()
+        m = TEAM_RE.search(text)
+        if m:
+            self.facts["team_size"] = m.group(1)
+        if PRICE_RE.search(text):
+            self.facts["asked_price"] = True
+        if DEMO_RE.search(text):
+            self.facts["wants_demo"] = True
+
+    def _context_text(self) -> str:
+        f = self.facts
+        known = []
+        if f.get("current_tool"):
+            known.append(f"they currently track leads in {f['current_tool']}")
+        if f.get("team_size"):
+            known.append(f"their sales team has about {f['team_size']} people")
+        if f.get("asked_price"):
+            known.append("they asked about pricing")
+        if f.get("wants_demo"):
+            known.append("they are interested in a demo")
+
+        text = ""
+        if known:
+            text += "\nWHAT YOU ALREADY KNOW (never ask for these again): " + "; ".join(known) + "."
+
+        if f.get("wants_demo") or f.get("asked_price") or self.buying_intent >= 70:
+            stage = ("CLOSE - they show buying interest. Offer the free demo this week and "
+                     "get their email if it is not collected yet.")
+        elif f.get("current_tool") and f.get("team_size"):
+            stage = ("CLOSE - you know their tool and team size. Pitch the one best-matching "
+                     "feature and offer the free demo this week.")
+        elif f.get("current_tool"):
+            stage = ("PITCH - connect the pain of their current tool to ONE matching feature, "
+                     "then ask how big their sales team is.")
+        else:
+            stage = ("DISCOVERY - find out what they use today to track leads and how big "
+                     "the team is, one question at a time.")
+        text += f"\nCONVERSATION STAGE: {stage}"
+        return text
 
     # ---------- live conversation ----------
 
@@ -114,12 +183,46 @@ class SalesAgent:
         else:
             extra += ("\nCustomer email: NOT collected yet. Ask for it before "
                       "promising to email anything.")
+        extra += self._context_text()
         if self.turn_count >= MAX_TURNS:
             extra += (
                 "\nWRAP UP NOW: the call has run long. Move toward a clear close - "
                 "book the demo, send details, or end politely. Do not start new topics."
             )
         return SYSTEM_PROMPT + extra
+
+    def _fallback_reply(self, text: str) -> str:
+        """Used ONLY when the LLM fails twice. Context-aware, never 'say that again'."""
+        self._fallback_count += 1
+        f = self.facts
+
+        if NO_INTEREST_RE.search(text):
+            return "No problem at all, thanks for your time. Have a great day!"
+        if EMAIL_WORD_RE.search(text) and not self.customer_email:
+            return ASK_EMAIL_REPLY
+        if PRICE_RE.search(text):
+            return ("It's 799 rupees per user per month. "
+                    "Want me to set up a free demo this week?")
+        if DEMO_RE.search(text):
+            if self.customer_email:
+                return ("Great, our team will schedule a free demo this week "
+                        "and I'll email you the details after the call.")
+            return ASK_EMAIL_REPLY
+        if f.get("current_tool"):
+            if f.get("team_size"):
+                return ("That's a good size for a shared pipeline. "
+                        "Want a free demo this week to see it?")
+            return (f"{f['current_tool'].capitalize()} works at first, but it gets messy as "
+                    "the team grows. How many people are on your sales team?")
+        if YES_RE.match(text):
+            return "Great! What do you use today to track your leads?"
+
+        defaults = [
+            "Thanks for sharing that. How big is your sales team right now?",
+            "Makes sense. What's the biggest headache with tracking leads today?",
+            "Got it. Would a free demo this week be useful to see how it works?",
+        ]
+        return defaults[(self._fallback_count - 1) % len(defaults)]
 
     def generate_reply(self, customer_text: str) -> dict:
         """One conversation turn. Returns a packet ready to broadcast over WS."""
@@ -131,20 +234,30 @@ class SalesAgent:
         if found:
             self.customer_email = found.group(0).strip()
         history_text = EMAIL_RE.sub("[email address provided]", customer_text)
+        self._update_facts(history_text)
 
         # history is passed BEFORE the new customer message; run_reply() adds it itself.
-        try:
-            turn = run_reply(self._system_text(), self.history, history_text)
-            reply = turn.reply.strip() or "Sorry, could you say that again?"
+        reply = ""
+        for attempt in (1, 2):
+            try:
+                turn = run_reply(self._system_text(), self.history, history_text)
+                candidate = (turn.reply or "").strip()
+                if not candidate:
+                    logging.error("LLM returned an EMPTY reply (attempt %d)", attempt)
+                    continue
+                reply = candidate
+                # smooth live signals so the % doesn't jump around
+                self.buying_intent = round(0.6 * turn.buying_intent + 0.4 * self.buying_intent)
+                self.sentiment = turn.sentiment
+                self.topic = turn.topic
+                break
+            except Exception:
+                # Look for this line in the uvicorn terminal: the traceback is the REAL cause.
+                logging.exception("Groq reply failed (attempt %d)", attempt)
 
-            # smooth live signals so the % doesn't jump around
-            self.buying_intent = round(0.6 * turn.buying_intent + 0.4 * self.buying_intent)
-            self.sentiment = turn.sentiment
-            self.topic = turn.topic
-        except Exception:
-            logging.exception("Groq reply failed")
-            # Never crash a live call: say a safe sentence and keep the old signals.
-            reply = "Sorry, could you say that again?"
+        if not reply:
+            # Never crash a live call, and never repeat "say that again".
+            reply = self._fallback_reply(history_text)
 
         # Guardrail: never promise an email we have no address for
         if not self.customer_email and "?" not in reply and PROMISE_RE.search(reply):
