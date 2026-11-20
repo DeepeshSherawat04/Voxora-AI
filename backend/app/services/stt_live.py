@@ -1,3 +1,4 @@
+# stt_live.py - Sarvam realtime streaming STT (live partial transcripts + server-side turn detection)
 """Sarvam realtime streaming STT (live partial transcripts + server-side turn detection).
 
 Browser -> (our /ws/call) -> LiveSTT -> Sarvam wss realtime endpoint.

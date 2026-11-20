@@ -1,3 +1,4 @@
+# stt.py - Sarvam AI Speech-to-Text (Saaras)
 """Sarvam AI Speech-to-Text (Saaras)."""
 import io
 import logging

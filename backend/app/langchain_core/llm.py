@@ -26,7 +26,7 @@ from app.config import settings  # reads GROQ_API_KEY from our .env file
 
 # --- Model choices -----------------------------------------------------------
 MODEL_NAME = settings.GROQ_MODEL          # big model: end-of-call summary
-REPLY_MODEL = getattr(settings, "GROQ_REPLY_MODEL", "llama-3.1-8b-instant")
+REPLY_MODEL = settings.GROQ_REPLY_MODEL
 
 # Models on Groq that really accept reasoning_effort.
 # If the model name contains any of these words, we can send reasoning_effort.

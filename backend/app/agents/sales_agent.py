@@ -15,6 +15,8 @@ import logging
 import re
 from typing import List
 
+import groq
+
 from app.langchain_core.chains import run_reply, run_summary
 from app.models.schemas import CallSummary
 
@@ -142,6 +144,13 @@ class SalesAgent:
         if DEMO_RE.search(text):
             self.facts["wants_demo"] = True
 
+        last_ai = next((m["content"] for m in reversed(self.history)
+                        if m["role"] == "assistant"), "").lower()
+        if "team_size" not in self.facts and "how many" in last_ai and "team" in last_ai:
+            m = re.fullmatch(r"\D*(\d{1,3})\D*", text.strip())
+            if m:
+                self.facts["team_size"] = m.group(1)
+
     def _context_text(self) -> str:
         f = self.facts
         known = []
@@ -251,6 +260,9 @@ class SalesAgent:
                 self.sentiment = turn.sentiment
                 self.topic = turn.topic
                 break
+            except groq.NotFoundError:
+                logging.exception("Groq model not found")
+                break
             except Exception:
                 # Look for this line in the uvicorn terminal: the traceback is the REAL cause.
                 logging.exception("Groq reply failed (attempt %d)", attempt)
@@ -258,6 +270,10 @@ class SalesAgent:
         if not reply:
             # Never crash a live call, and never repeat "say that again".
             reply = self._fallback_reply(history_text)
+
+        prev = self.history[-1]["content"] if self.history else ""
+        if reply.strip().lower() == prev.strip().lower():
+            reply = "Thanks, that helps. Would a free demo this week be useful to see it in action?"
 
         # Guardrail: never promise an email we have no address for
         if not self.customer_email and "?" not in reply and PROMISE_RE.search(reply):

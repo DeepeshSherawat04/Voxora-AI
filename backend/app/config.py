@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "openai/gpt-oss-120b"
+    GROQ_REPLY_MODEL: str = "openai/gpt-oss-20b"
     DATABASE_URL: str = "postgresql://postgres:postgres123@localhost:5432/voxora"
     RECORDINGS_DIR: str = "recordings"
     PRODUCT_NAME: str = "CloudDesk CRM"
