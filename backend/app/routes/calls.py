@@ -51,12 +51,12 @@ def _is_echo_of(text: str, last_ai: str) -> bool:
     a, b = text.lower().strip(), (last_ai or "").lower().strip()
     if not a or not b:
         return False
-    if len(a) < 12:                      # too short to be an echo of a whole agent sentence
+    if len(a) < 20:                      # too short to be an echo of a whole agent sentence
         return False
     if a in b or b in a:                 # one line sits inside the other
         return True
     # otherwise: are the two lines mostly the same? (0 = nothing alike, 1 = identical)
-    return difflib.SequenceMatcher(None, a, b).ratio() > 0.55
+    return difflib.SequenceMatcher(None, a, b).ratio() > 0.7
 
 
 async def _handle_user_text(websocket: WebSocket, call: Call, agent: SalesAgent, db, text: str) -> None:
@@ -116,7 +116,7 @@ async def _finalize(
             "sales_status": call.sales_status,
             "summary": summary.model_dump(),
         })
-        
+
         if customer_spoke:
             user_texts = [m["content"] for m in agent.history if m["role"] == "user"]
             spoken_email = (getattr(agent, "customer_email", "")
@@ -261,7 +261,10 @@ async def call_socket(websocket: WebSocket):
                     # ...and if this "customer" text matches it, it is our own
                     # voice coming back through the speakers. Ignore it.
                     if _is_echo_of(text, last_ai):
-                        return                   # our own TTS, not the customer
+                        logger.info("echo dropped: %r", text)
+                        await websocket.send_json({"type": "stt_empty"})
+                        return
+
                     async with turn_lock:
                         await _handle_user_text(websocket, call, agent, db, text)
 
@@ -271,7 +274,12 @@ async def call_socket(websocket: WebSocket):
                 async def _on_error(message: str) -> None:
                     await websocket.send_json({"type": "error", "message": message})
 
-                live_stt = LiveSTT(_on_partial, _on_final, _on_empty, _on_error)
+                async def _on_ready() -> None:
+                    # the Sarvam realtime session is live: the browser can show "Listening…"
+                    await websocket.send_json({"type": "stt_ready"})
+
+                live_stt = LiveSTT(_on_partial, _on_final, _on_empty, _on_error,
+                                   on_ready=_on_ready)
                 await live_stt.start()
 
             elif mtype == "audio_chunk":

@@ -1,8 +1,10 @@
 // frontend/src/components/LiveCallPanel.jsx
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Bot, Check, Loader2, Mic, MicOff, Phone, PhoneOff, TriangleAlert, Volume2, VolumeX } from "lucide-react";
 import { fmtClock } from "../lib/format";
 import { Avatar, PanelHeader, TonePill } from "./ui";
+
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 // Computed once, not on every render.
 const BARS = Array.from({ length: 26 }, (_, i) => ({
@@ -47,13 +49,19 @@ function ControlButton({ label, onClick, active = false, pressed, children }) {
 
 export default function LiveCallPanel({
   phase, elapsed, live, customerName, consent,
-  muted, error, hasVoice, speakerOn,
+  muted, error, hasVoice, speakerOn, sttReady,
   onStart, onEnd, onToggleMute, onToggleSpeaker,
 }) {
   const uid = useId();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [agree, setAgree] = useState(false);
+
+  // Wake the backend as soon as the page loads, so the cold start happens
+  // BEFORE the user clicks Start call instead of during it.
+  useEffect(() => {
+    fetch(API_BASE + "/health").catch(() => {});
+  }, []);
 
   /* ───────────── Idle / connecting / ended ───────────── */
   if (phase !== "in_call") {
@@ -154,6 +162,11 @@ export default function LiveCallPanel({
                 </>
               )}
             </button>
+            {connecting && (
+              <p className="mt-2 text-center text-xs text-zinc-500">
+                Waking up server, this can take a few seconds…
+              </p>
+            )}
           </div>
         </form>
       </Shell>
@@ -213,10 +226,22 @@ export default function LiveCallPanel({
 
         <div className="mt-4 text-center" aria-live="polite">
           <p className="text-sm font-medium text-zinc-950">
-            {live.speaking ? "Voxora is speaking" : muted ? "Microphone muted" : "Listening…"}
+            {live.speaking
+              ? "Voxora is speaking"
+              : muted
+                ? "Microphone muted"
+                : sttReady
+                  ? "Listening…"
+                  : "Mic not connected, type your reply"}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {live.speaking ? "The AI agent has the floor" : muted ? "Unmute to talk" : "Speak when you're ready"}
+            {live.speaking
+              ? "The AI agent has the floor"
+              : muted
+                ? "Unmute to talk"
+                : sttReady
+                  ? "Speak when you're ready"
+                  : "Speech recognition is still connecting"}
           </p>
         </div>
       </div>

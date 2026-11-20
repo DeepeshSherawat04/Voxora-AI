@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Sounds a noisy room produces; never worth a reply from the agent.
 _FILLERS = {"uh", "um", "umm", "uhh", "hmm", "hm", "mm", "mmm", "mhm", "ah", "aah",
             "er", "erm", "huh", "ok", "okay", "k", "kk", "han", "haan", "achha",
-            "theek", "theek hai"}
+            "theek", "theek hai", "however", "so", "then", "and", "but", "well", "also", "anyway", "because", "yet", "now", "like", "the", "a"}
 
 
 def _is_noise(text: str) -> bool:
@@ -36,11 +36,13 @@ VoidCb = Callable[[], Awaitable[None]]
 
 class LiveSTT:
     def __init__(self, on_partial: TextCb, on_final: TextCb,
-                 on_empty: VoidCb, on_error: TextCb):
+                 on_empty: VoidCb, on_error: TextCb,
+                 on_ready: VoidCb | None = None):
         self._on_partial = on_partial
         self._on_final = on_final
         self._on_empty = on_empty
         self._on_error = on_error
+        self._on_ready = on_ready
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=300)  # ~30 s of 100 ms frames
         self._runner: asyncio.Task | None = None
         self._tasks: set[asyncio.Task] = set()
@@ -134,6 +136,8 @@ class LiveSTT:
 
         async with cm as ws:
             logger.info("Sarvam realtime STT connected")
+            if self._on_ready is not None:
+                await self._safe(self._on_ready())   # tell the client the mic link is live
             sender = asyncio.create_task(self._send_loop(ws))
             try:
                 async for message in ws:

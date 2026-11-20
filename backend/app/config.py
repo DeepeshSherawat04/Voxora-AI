@@ -32,8 +32,8 @@ class Settings(BaseSettings):
 
     STT_KEYTERMS: str = "CloudDesk,Voxora,CRM,Aria"
     STT_SILENCE_MS: int = 1200
-    STT_THRESHOLD: float = 0.3
-    STT_MIN_SPEECH_MS: int = 250
+    STT_THRESHOLD: float = 0.5
+    STT_MIN_SPEECH_MS: int = 400
 
 
 settings = Settings()

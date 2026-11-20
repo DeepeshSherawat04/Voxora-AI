@@ -271,9 +271,14 @@ class SalesAgent:
             # Never crash a live call, and never repeat "say that again".
             reply = self._fallback_reply(history_text)
 
-        prev = self.history[-1]["content"] if self.history else ""
-        if reply.strip().lower() == prev.strip().lower():
-            reply = "Thanks, that helps. Would a free demo this week be useful to see it in action?"
+        seen = {m["content"].strip().lower() for m in self.history if m["role"] == "assistant"}
+        if reply.strip().lower() in seen:
+            alternatives = [
+                "Got it. What's the biggest headache with your current process?",
+                "Understood. Would a quick free demo this week help you see it?",
+                "Makes sense. Anything else you'd like to know about CloudDesk?",
+            ]
+            reply = alternatives[self.turn_count % len(alternatives)]
 
         # Guardrail: never promise an email we have no address for
         if not self.customer_email and "?" not in reply and PROMISE_RE.search(reply):

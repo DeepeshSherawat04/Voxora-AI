@@ -15,8 +15,8 @@ const FRAME_SAMPLES = 1600;     // 100 ms of 16 kHz audio per websocket frame
 const RESUME_HOLD_MS = 700;     // was 400 - ignore the mic after the agent stops talking, so speaker echo can die out
 
 // ---------- Sarvam TTS reliability ----------
-const TTS_TIMEOUT_MS = 10000;       // was 8000 - give Sarvam a little longer before giving up
-const TTS_RETRIES = 2;              // retry Sarvam this many extra times before failing
+const TTS_TIMEOUT_MS = 25000;       // was 10000 - Sarvam can be slow on a cold backend; don't give up early
+const TTS_RETRIES = 1;              // was 2 - one retry is enough; a cold start takes ~30 s, not 3 tries
 const ALLOW_BROWSER_VOICE = false;  // false = never switch to the Chrome voice (reply shows as text only)
 
 // ---------- barge-in (customer interrupts the agent) ----------
@@ -31,9 +31,9 @@ const BARGE_RING_MS = 700;      // audio kept from just BEFORE the interruption,
 // silence. The gate adapts to the room (noise floor) and to how loudly THIS customer speaks, so
 // quieter background chatter / TV / keyboard noise is ignored.
 const NOISE_GATE_ENABLED = true;
-const GATE_OPEN_MIN_RMS = 0.008;   // was 0.006 - never open below this
+const GATE_OPEN_MIN_RMS = 0.012;   // was 0.006 - never open below this
 const GATE_CLOSE_MIN_RMS = 0.004;
-const GATE_OPEN_MS = 150;          // was 60 - voice must persist this long to open (ignores taps/breaths)
+const GATE_OPEN_MS = 250;          // was 60 - voice must persist this long to open (ignores taps/breaths)
 const GATE_HANG_MS = 600;          // keep passing audio this long after voice drops (word endings)
 const GATE_PREROLL_MS = 300;       // audio from just before the gate opened (first syllable)
 const SPEAKER_LOCK = 0.3;          // background must be louder than 30% of the customer's own level
@@ -121,6 +121,7 @@ export function useCall(onCallEnded) {
   const [ended, setEnded] = useState(null);
   const [error, setError] = useState(null);
   const [speakerOn, setSpeakerOn] = useState(true);
+  const [sttReady, setSttReady] = useState(false);    // true once the Sarvam realtime STT session is live
 
   const wsRef = useRef(null);
   const timerRef = useRef(null);
@@ -362,10 +363,12 @@ export function useCall(onCallEnded) {
       const silence = () => new Int16Array(i16.length);
       const speakerCap = (k, cap) => Math.min(bd.speechLevel * k, cap);
 
-      if (mutedRef.current || performance.now() < holdUntilRef.current) {
+      if (mutedRef.current) {
+        resetGate(); resetBarge();
+        return;                          
+      } else if (performance.now() < holdUntilRef.current) {
         resetGate(); resetBarge();
         emit(silence());
-
       } else if (speakingRef.current) {
         // Agent is talking. Send SILENCE to STT (so its own voice isn't transcribed) but watch the
         // mic locally: if the customer keeps talking over the agent, that is an interruption.
@@ -529,6 +532,7 @@ export function useCall(onCallEnded) {
     consentRef.current = !!recConsent;    // read by startMic for the consent recording
     aiQueueRef.current = Promise.resolve();
     setError(null); setTranscript([]); setPartial(null); setElapsed(0); setEnded(null); setTyping(false);
+    setSttReady(false);                   // mic link opens when the server says stt_ready
     setCustomerName(name || "Customer");
     setConsent(!!recConsent);
     callIdRef.current = null;
@@ -553,6 +557,8 @@ export function useCall(onCallEnded) {
         callIdRef.current = msg.call_id;   // needed for the recording upload
         setPhase("in_call");
         startMic();                        // streams mic to STT; also records if consent was given
+      } else if (msg.type === "stt_ready") {
+        setSttReady(true);                 // Sarvam realtime session is live — the mic is connected
       } else if (msg.type === "stt_partial") {
         // live words while the customer is still speaking
         if (!speakingRef.current) {
@@ -661,6 +667,6 @@ export function useCall(onCallEnded) {
   );
 
   return { phase, transcript: shownTranscript, typing, live, customerName, consent, elapsed,
-           muted, ended, error, hasVoice, speakerOn,
+           muted, ended, error, hasVoice, speakerOn, sttReady,
            startCall, endCall, sendText, toggleMute, toggleSpeaker };
 }
